@@ -43,6 +43,14 @@ class NoDuplicateIpsCheck(Validators):
 
                     if address in found_ips and address is not None:
                         msg = ('Duplicate IP Address Found: %s ' % address)
+                        oob_net = node.oob_parameters.get('network')
+                        if ip_address.network == oob_net:
+                            ipmi_bridging = node.oob_parameters.get('bridging', 'no')
+                            if ipmi_bridging != 'no':
+                                self.report_warn(
+                                    msg, [node.doc_ref, found_ips[address].doc_ref],
+                                    "IPMI Bridging enabled, allowing duplicate IP address for oob network.")
+                                return                   
                         self.report_error(
                             msg, [node.doc_ref, found_ips[address].doc_ref],
                             "Select unique IP addresses for each node.")

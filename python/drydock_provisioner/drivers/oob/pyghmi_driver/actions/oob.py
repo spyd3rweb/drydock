@@ -28,6 +28,56 @@ import drydock_provisioner.error as errors
 import drydock_provisioner.objects.fields as hd_fields
 
 
+class BridgeableCommand(Command):
+    """Send Bridged IPMI commands to BMCs.
+    
+    :param bmc: hostname or ip address of the BMC (default is local)
+    :param userid: username to use to connect (default to no user)
+    :param password: password to connect to the BMC (defaults to no password)
+    :param onlogon: function to run when logon completes in an asynchronous
+                    fashion.  This will result in a greenthread behavior.
+    :param kg: Optional parameter to use if BMC has a particular Kg configured
+    :param bridge_request: The target slave address and channel number for
+                               the bridge request.
+    """
+    def __init__(self, bmc=None, userid=None, password=None, port=623,
+                 onlogon=None, kg=None, privlevel=4, bridge_request=()):
+
+        """Set bridge_request."""
+        self.bridge_request = bridge_request
+
+        super().__init__(self, bmc, userid, password, port,
+                                onlogon, kg, privlevel)
+    
+    def raw_command(self, netfn, command, bridge_request=(), data=(),
+                    delay_xmit=None, retry=True, timeout=None):
+        """Send raw ipmi command to BMC
+
+        This allows arbitrary IPMI bytes to be issued.  This is commonly used
+        for certain vendor specific commands.
+
+        Example: ipmicmd.raw_command(netfn=0,command=4,data=(5))
+
+        :param netfn: Net function number
+        :param command: Command value
+        :param bridge_request: The target slave address and channel number for
+                               the bridge request.
+        :param data: Command data as a tuple or list
+        :param retry: Whether or not to retry command if no response received.
+                      Defaults to True
+        :param timeout: A custom amount of time to wait for initial reply
+        :returns: dict -- The response from IPMI device
+        """
+
+        """Replace param bridge_request if empty."""
+        if self.bridge_request and not bridge_request:
+            bridge_request = self.bridge_request
+
+        return super().raw_command(netfn=netfn, command=command,
+                                   bridge_request=bridge_request,
+                                   data=data, delay_xmit=delay_xmit,
+                                   retry=retry, timeout=timeout)
+
 class PyghmiBaseAction(BaseAction):
     """Base action for Pyghmi executed actions."""
 
@@ -37,6 +87,21 @@ class PyghmiBaseAction(BaseAction):
         :param node: instance of objects.BaremetalNode
         :return: An instance of pyghmi.ipmi.command.Command initialized to nodes' IPMI interface
         """
+        def get_int_or_none(value):
+            """Get int or None.
+            
+            :param value: value to convert to int
+            :return: int or None if error
+            """
+
+            if value is not None:
+                try:
+                    value = int(value)
+                except ValueError:
+                    """Set value to None"""                                   
+                    value = None
+            return value
+
         if node.oob_type != 'ipmi':
             raise errors.DriverError("Node OOB type is not IPMI")
 
@@ -50,10 +115,37 @@ class PyghmiBaseAction(BaseAction):
         ipmi_account = node.oob_parameters['account']
         ipmi_credential = node.oob_parameters['credential']
 
+        """The remote IPMI RMCP port. 
+            By default pyghmi will use the port 623"""
+        ipmi_port = get_int_or_none(node.oob_parameters['port'])
+
+        """The bridging type.
+            Default is 'no' or None; other supported values are 'single' for single bridge"""
+        bridge_request = None
+        ipmi_bridging = node.oob_parameters.get('bridging', 'no')
+        """TODO: add support for 'dual' for double bridge to bring parity with openstack ironic"""
+        if ipmi_bridging is 'single':
+            """The target slave address and channel number for the bridge request.
+               Required only if ipmi_bridging is set to 'single'."""
+            ipmi_target_address = get_int_or_none(
+                node.oob_parameters.get('target_address', 0x0))
+            ipmi_target_channel = get_int_or_none(
+                node.oob_parameters.get('target_channel', 0x0))
+            bridge_request = { 'addr': ipmi_target_address, 
+                               'channel': ipmi_target_channel }
+
+            bridging_msg = ("IPMI Command Bridging enabled with target address (%s) and channel (%s)" %
+                            (ipmi_target_address, ipmi_target_channel))
+            if ipmi_target_address == 0x0 and ipmi_target_channel == 0x0:
+                self.logger.warning(bridging_msg)
+            else:
+                self.logger.debug(bridging_msg)
+
         self.logger.debug("Starting IPMI session to %s with %s/%s" %
                           (ipmi_address, ipmi_account, ipmi_credential[:1]))
-        ipmi_session = Command(
-            bmc=ipmi_address, userid=ipmi_account, password=ipmi_credential)
+        ipmi_session = BridgeableCommand(
+            bmc=ipmi_address, userid=ipmi_account, password=ipmi_credential, 
+            port=ipmi_port, bridge_request=bridge_request)
 
         return ipmi_session
 

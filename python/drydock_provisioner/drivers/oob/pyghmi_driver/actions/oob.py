@@ -46,8 +46,8 @@ class BridgeableCommand(Command):
         """Set bridge_request."""
         self.bridge_request = bridge_request
 
-        super().__init__(bmc, userid, password, port,
-                         onlogon, kg, privlevel)
+        super().__init__(bmc=bmc, userid=userid, password=password, port=port,
+                         onlogon=onlogon, kg=kg, privlevel=privlevel)
     
     def raw_command(self, netfn, command, bridge_request=(), data=(),
                     delay_xmit=None, retry=True, timeout=None):
@@ -117,7 +117,7 @@ class PyghmiBaseAction(BaseAction):
 
         """The remote IPMI RMCP port. 
             By default pyghmi will use the port 623"""
-        ipmi_port = get_int_or_none(node.oob_parameters['port'])
+        ipmi_port = get_int_or_none(node.oob_parameters.get('port', 623))
 
         """The bridging type.
             Default is 'no' or None; other supported values are 'single' for single bridge"""
@@ -139,7 +139,7 @@ class PyghmiBaseAction(BaseAction):
             if ipmi_target_address == 0x0 and ipmi_target_channel == 0x0:
                 self.logger.warning(bridging_msg)
             else:
-                self.logger.debug(bridging_msg)
+                self.logger.info(bridging_msg)
 
         self.logger.debug("Starting IPMI session to %s with %s/%s" %
                           (ipmi_address, ipmi_account, ipmi_credential[:1]))
@@ -246,11 +246,11 @@ class SetNodeBoot(PyghmiBaseAction):
                 error=False,
                 ctx=n.name,
                 ctx_type='node')
-            self.exec_ipmi_command(n, Command.set_bootdev, 'pxe')
+            self.exec_ipmi_command(n, BridgeableCommand.set_bootdev, 'pxe')
 
             time.sleep(3)
 
-            bootdev = self.exec_ipmi_command(n, Command.get_bootdev)
+            bootdev = self.exec_ipmi_command(n, BridgeableCommand.get_bootdev)
 
             if bootdev is not None and (bootdev.get('bootdev',
                                                     '') == 'network'):
@@ -295,13 +295,13 @@ class PowerOffNode(PyghmiBaseAction):
                 error=False,
                 ctx=n.name,
                 ctx_type='node')
-            self.exec_ipmi_command(n, Command.set_power, 'off')
+            self.exec_ipmi_command(n, BridgeableCommand.set_power, 'off')
 
             i = 18
 
             while i > 0:
                 self.logger.debug("Polling powerstate waiting for success.")
-                power_state = self.exec_ipmi_command(n, Command.get_power)
+                power_state = self.exec_ipmi_command(n, BridgeableCommand.get_power)
                 if power_state is not None and (power_state.get(
                         'powerstate', '') == 'off'):
                     self.task.add_status_msg(
@@ -350,13 +350,13 @@ class PowerOnNode(PyghmiBaseAction):
                 error=False,
                 ctx=n.name,
                 ctx_type='node')
-            self.exec_ipmi_command(n, Command.set_power, 'off')
+            self.exec_ipmi_command(n, BridgeableCommand.set_power, 'off')
 
             i = 18
 
             while i > 0:
                 self.logger.debug("Polling powerstate waiting for success.")
-                power_state = self.exec_ipmi_command(n, Command.get_power)
+                power_state = self.exec_ipmi_command(n, BridgeableCommand.get_power)
                 if power_state is not None and (power_state.get(
                         'powerstate', '') == 'on'):
                     self.logger.debug(
@@ -405,14 +405,14 @@ class PowerCycleNode(PyghmiBaseAction):
                 error=False,
                 ctx=n.name,
                 ctx_type='node')
-            self.exec_ipmi_command(n, Command.set_power, 'off')
+            self.exec_ipmi_command(n, BridgeableCommand.set_power, 'off')
 
             # Wait for power state of off before booting back up
             # We'll wait for up to 3 minutes to power off
             i = 18
 
             while i > 0:
-                power_state = self.exec_ipmi_command(n, Command.get_power)
+                power_state = self.exec_ipmi_command(n, BridgeableCommand.get_power)
                 if power_state is not None and power_state.get(
                         'powerstate', '') == 'off':
                     self.logger.debug("%s reports powerstate of off" % n.name)
@@ -436,12 +436,12 @@ class PowerCycleNode(PyghmiBaseAction):
                 break
 
             self.logger.debug("Sending set_power = on command to %s" % n.name)
-            self.exec_ipmi_command(n, Command.set_power, 'on')
+            self.exec_ipmi_command(n, BridgeableCommand.set_power, 'on')
 
             i = 18
 
             while i > 0:
-                power_state = self.exec_ipmi_command(n, Command.get_power)
+                power_state = self.exec_ipmi_command(n, BridgeableCommand.get_power)
                 if power_state is not None and power_state.get(
                         'powerstate', '') == 'on':
                     self.logger.debug("%s reports powerstate of on" % n.name)
@@ -492,7 +492,7 @@ class InterrogateOob(PyghmiBaseAction):
             try:
                 self.logger.debug(
                     "Interrogating node %s IPMI interface." % n.name)
-                powerstate = self.exec_ipmi_command(n, Command.get_power)
+                powerstate = self.exec_ipmi_command(n, BridgeableCommand.get_power)
                 if powerstate is None:
                     raise errors.DriverError()
                 self.task.add_status_msg(

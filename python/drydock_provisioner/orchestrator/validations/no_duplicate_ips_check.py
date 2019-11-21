@@ -47,7 +47,7 @@ class NoDuplicateIpsCheck(Validators):
                         if ip_address.network == oob_net:
                             ipmi_bridging = node.oob_parameters.get('bridging', 'no')
                             if ipmi_bridging != 'no':
-                                self.report_warn(
+                                self.report_info(
                                     msg, [node.doc_ref, found_ips[address].doc_ref],
                                     "IPMI Bridging enabled, allowing duplicate IP address for oob network.")
                                 return                   

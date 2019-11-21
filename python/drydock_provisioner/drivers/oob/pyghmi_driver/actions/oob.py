@@ -46,8 +46,8 @@ class BridgeableCommand(Command):
         """Set bridge_request."""
         self.bridge_request = bridge_request
 
-        super().__init__(self, bmc, userid, password, port,
-                                onlogon, kg, privlevel)
+        super().__init__(bmc, userid, password, port,
+                         onlogon, kg, privlevel)
     
     def raw_command(self, netfn, command, bridge_request=(), data=(),
                     delay_xmit=None, retry=True, timeout=None):

@@ -41,13 +41,13 @@ class BridgeableCommand(Command):
                                the bridge request.
     """
     def __init__(self, bmc=None, userid=None, password=None, port=623,
-                 onlogon=None, kg=None, privlevel=4, bridge_request=()):
+                 onlogon=None, kg=None, bridge_request=()):
 
         """Set bridge_request."""
         self.bridge_request = bridge_request
 
         super().__init__(bmc=bmc, userid=userid, password=password, port=port,
-                         onlogon=onlogon, kg=kg, privlevel=privlevel)
+                         onlogon=onlogon, kg=kg)
     
     def raw_command(self, netfn, command, bridge_request=(), data=(),
                     delay_xmit=None, retry=True, timeout=None):

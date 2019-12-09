@@ -28,6 +28,77 @@ import drydock_provisioner.error as errors
 import drydock_provisioner.objects.fields as hd_fields
 
 
+"""Needed until proper Session logout is enabled upstream
+Logout currently hangs when using pyghmi based BMC
+remove session from Session.initting_sessions"""
+class BridgeableSession(session.Session):
+    def __new__(cls,
+                bmc,
+                userid,
+                password,
+                port=623,
+                kg=None,
+                onlogon=None,
+                privlevel=4,
+                keepalive=True,
+                bridge_request=()):
+
+        return super().__new__(cls=cls,
+                                bmc=bmc,
+                                userid=userid,
+                                password=password,
+                                port=port,
+                                kg=kg,
+                                onlogon=onlogon,                     
+                                privlevel=privlevel
+                                # keepalive=keepalive # 1.4.1
+                                )
+    def __init__(self,
+                 bmc,
+                 userid,
+                 password,
+                 port=623,
+                 kg=None,
+                 onlogon=None,
+                 privlevel=4,
+                 keepalive=True,
+                 bridge_request=()):
+
+        """Set bridge_request."""
+        self.bridge_request = bridge_request
+
+        super().__init__(bmc=bmc,
+                         userid=userid,
+                         password=password,
+                         port=port,
+                         kg=kg,
+                         onlogon=onlogon,                     
+                         privlevel=privlevel
+                         # keepalive=keepalive  # 1.4.1
+                         )
+    
+    def logout(self, sessionok=True):
+        result = super().logout() # (sessionok=sessionok) # 1.4.1
+
+        if result.get('success', False):
+            try:
+                logging.debug("Clossing Session: %s" % self.sessionid)
+                # Added to initting_sessions in __new__
+                # userid and password are initialized as utf-8 encoded in __init__
+                del Session.initting_sessions[(self.bmc, 
+                                            self.userid.decode('utf-8'),
+                                            self.password.decode('utf-8'),
+                                            self.port,
+                                            self.kgo)]
+            except KeyError:
+                pass
+        
+        return result
+
+
+"""Needed until proper Command bridging is enabled upstream
+Logout currently hangs when using pyghmi based BMC
+remove session from Session.initting_sessions"""
 class BridgeableCommand(Command):
     """Send Bridged IPMI commands to BMCs.
     
@@ -40,6 +111,53 @@ class BridgeableCommand(Command):
     :param bridge_request: The target slave address and channel number for
                                the bridge request.
     """
+    def __init__(self, bmc=None, userid=None, password=None, port=623,
+                 onlogon=None, kg=None,  privlevel=4, verifycallback=None,
+                 keepalive=True, bridge_request=()):
+
+        """Set bridge_request."""
+        self.bridge_request = bridge_request
+
+        # super().__init__(bmc=bmc, userid=userid, password=password, port=port,
+        #                  onlogon=onlogon, kg=kg, privlevel=4)
+
+
+        # TODO(jbjohnso): accept tuples and lists of each parameter for mass
+        # operations without pushing the async complexities up the stack
+        self.onlogon = onlogon
+        self.bmc = bmc
+        self._sdrcachedir = None
+        self._sdr = None
+        self._oem = None
+        self._oemknown = False
+        # self._netchannel = bridge_request.get('channel', None)
+        self._netchannel = None
+        self._ipv6support = None
+        self.certverify = verifycallback
+        if bmc is None:
+            self.ipmi_session = localsession.Session()
+        elif onlogon is not None:
+            self.ipmi_session = BridgeableSession(bmc=bmc,
+                                                userid=userid,
+                                                password=password,
+                                                onlogon=self.logged,
+                                                port=port,
+                                                kg=kg,
+                                                privlevel=privlevel,
+                                                keepalive=keepalive,
+                                                bridge_request=bridge_request)
+            # induce one iteration of the loop, now that we would be
+            # prepared for it in theory
+            BridgeableSession.wait_for_rsp(0)
+        else:
+            self.ipmi_session = BridgeableSession(bmc=bmc,
+                                                userid=userid,
+                                                password=password,
+                                                port=port,
+                                                kg=kg,
+                                                privlevel=privlevel,
+                                                keepalive=keepalive,
+                                                bridge_request=bridge_request)
     def __init__(self, bmc=None, userid=None, password=None, port=623,
                  onlogon=None, kg=None, bridge_request=()):
 
@@ -124,7 +242,7 @@ class PyghmiBaseAction(BaseAction):
         bridge_request = None
         ipmi_bridging = node.oob_parameters.get('bridging', 'no')
         """TODO: add support for 'dual' for double bridge to bring parity with openstack ironic"""
-        if ipmi_bridging is 'single':
+        if ipmi_bridging == 'single':
             """The target slave address and channel number for the bridge request.
                Required only if ipmi_bridging is set to 'single'."""
             ipmi_target_address = get_int_or_none(
@@ -134,12 +252,8 @@ class PyghmiBaseAction(BaseAction):
             bridge_request = { 'addr': ipmi_target_address, 
                                'channel': ipmi_target_channel }
 
-            bridging_msg = ("IPMI Command Bridging enabled with target address (%s) and channel (%s)" %
-                            (ipmi_target_address, ipmi_target_channel))
-            if ipmi_target_address == 0x0 and ipmi_target_channel == 0x0:
-                self.logger.warning(bridging_msg)
-            else:
-                self.logger.info(bridging_msg)
+            self.logger.info("IPMI Command Bridging enabled with target address (%s) and channel (%s)" %
+                             (ipmi_target_address, ipmi_target_channel))
 
         self.logger.debug("Starting IPMI session to %s with %s/%s" %
                           (ipmi_address, ipmi_account, ipmi_credential[:1]))

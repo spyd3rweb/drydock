@@ -20,6 +20,11 @@ import time
 
 from pyghmi.ipmi.command import Command
 from pyghmi.exceptions import IpmiException
+try:
+    from pyghmi.ipmi.private import localsession, session
+except ImportError:
+    localsession = None
+    session = None
 
 from drydock_provisioner.orchestrator.actions.orchestrator import BaseAction
 

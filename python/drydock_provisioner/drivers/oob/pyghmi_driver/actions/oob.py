@@ -20,11 +20,8 @@ import time
 
 from pyghmi.ipmi.command import Command
 from pyghmi.exceptions import IpmiException
-try:
-    from pyghmi.ipmi.private import localsession, session
-except ImportError:
-    localsession = None
-    session = None
+
+from pyghmi.ipmi.private import session, localsession # 1.2.16
 
 from drydock_provisioner.orchestrator.actions.orchestrator import BaseAction
 
@@ -55,7 +52,7 @@ class BridgeableSession(session.Session):
                                 port=port,
                                 kg=kg,
                                 onlogon=onlogon,                     
-                                privlevel=privlevel
+                                privlevel=privlevel # 1.2.16
                                 # keepalive=keepalive # 1.4.1
                                 )
     def __init__(self,
@@ -78,7 +75,7 @@ class BridgeableSession(session.Session):
                          port=port,
                          kg=kg,
                          onlogon=onlogon,                     
-                         privlevel=privlevel
+                         privlevel=privlevel # 1.2.16
                          # keepalive=keepalive  # 1.4.1
                          )
     
@@ -87,14 +84,13 @@ class BridgeableSession(session.Session):
 
         if result.get('success', False):
             try:
-                logging.debug("Clossing Session: %s" % self.sessionid)
                 # Added to initting_sessions in __new__
                 # userid and password are initialized as utf-8 encoded in __init__
-                del Session.initting_sessions[(self.bmc, 
-                                            self.userid.decode('utf-8'),
-                                            self.password.decode('utf-8'),
-                                            self.port,
-                                            self.kgo)]
+                del session.Session.initting_sessions[(self.bmc, 
+                                                      self.userid.decode('utf-8'),
+                                                      self.password.decode('utf-8'),
+                                                      self.port,
+                                                      self.kgo)]
             except KeyError:
                 pass
         
@@ -140,7 +136,7 @@ class BridgeableCommand(Command):
         self._ipv6support = None
         self.certverify = verifycallback
         if bmc is None:
-            self.ipmi_session = localsession.Session()
+            self.ipmi_session = localsession.Session()  # 1.2.16
         elif onlogon is not None:
             self.ipmi_session = BridgeableSession(bmc=bmc,
                                                 userid=userid,
@@ -163,14 +159,6 @@ class BridgeableCommand(Command):
                                                 privlevel=privlevel,
                                                 keepalive=keepalive,
                                                 bridge_request=bridge_request)
-    def __init__(self, bmc=None, userid=None, password=None, port=623,
-                 onlogon=None, kg=None, bridge_request=()):
-
-        """Set bridge_request."""
-        self.bridge_request = bridge_request
-
-        super().__init__(bmc=bmc, userid=userid, password=password, port=port,
-                         onlogon=onlogon, kg=kg)
     
     def raw_command(self, netfn, command, bridge_request=(), data=(),
                     delay_xmit=None, retry=True, timeout=None):

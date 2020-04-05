@@ -574,8 +574,7 @@ class Machines(model_base.ResourceCollectionBase):
         """
         maas_node = None
 
-        if ((node_model.oob_type == 'ipmi' or node_model.oob_type == 'redfish')
-            and node_model.oob_parameters.get('bridging', 'no') != 'no'):
+        if ((node_model.oob_type == 'ipmi' or node_model.oob_type == 'redfish'):
             node_oob_network = node_model.oob_parameters['network']
             node_oob_ip = node_model.get_network_address(node_oob_network)
 
@@ -586,10 +585,21 @@ class Machines(model_base.ResourceCollectionBase):
             try:
                 self.collect_power_params()
 
-                maas_node = self.singleton({
-                    'power_params.power_address':
-                    node_oob_ip
-                })
+                if (node_model.oob_parameters.get('bridging', 'no') == 'no'):
+                    maas_node = self.singleton({
+                        'power_params.power_address':
+                        node_oob_ip
+                    })
+                else:
+                    # Use boot_mac for node's as IPMI IP is not unique when bridging
+                    nodes = self.find_nodes_with_mac(node_model.boot_mac)
+
+                    if len(nodes) == 1:
+                        maas_node = nodes[0]
+                    else:
+                        self.logger.debug("Error: Found %d nodes with MAC %s", len(nodes), node_model.boot_mac)
+                        maas_node = None
+                        
             except ValueError:
                 self.logger.info(
                     "Error locating matching MaaS resource for OOB IP %s" %
